@@ -1,0 +1,31 @@
+# Build artifacts
+*.exe
+*.o
+*.obj
+*.out
+*.a
+*.lib
+*.dll
+*.pdb
+*.ilk
+
+# VS Code / IDE
+.vscode/
+*.code-workspace
+
+# Visual Studio / MSBuild
+.vs/
+*.user
+*.suo
+*.userosscache
+*.vcxproj.user
+
+# CMake / build directories
+build/
+cmake-build-*/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
