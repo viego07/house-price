@@ -29,3 +29,11 @@ cmake-build-*/
 *.tmp
 *.swp
 *.swo
+
+# 忽略macOS调试生成的.dSYM目录
+*.dSYM/
+
+# 忽略没有后缀的可执行文件
+*
+
+

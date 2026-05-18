@@ -1,3 +1,13 @@
+/*
+工作流说明：
+1. 从文件中读取数据，解析为特征矩阵 X 和目标值向量 y。
+2. 计算每个特征与目标值的皮尔逊相关系数，并选择相关性最高的 4 个特征。
+3. 构造线性回归的矩阵方程 A * beta = b。
+4. 使用高斯消元法求解矩阵 A 的逆矩阵，并计算回归系数 beta。
+5. 使用均方误差 (MSE) 和均方根误差 (RMSE) 评估模型。
+6. 输出回归方程和模型评估结果。
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -9,16 +19,18 @@
 #include <windows.h>
 #endif
 
-#define MAX_ROWS 2000
-#define FEATURE_COUNT 13
-#define SELECT_COUNT 4
-#define LINE_BUF 1024
+#define MAX_ROWS 2000 // 数据的最大行数
+#define FEATURE_COUNT 13 // 特征数量
+#define SELECT_COUNT 4 // 选择的特征数量
+#define LINE_BUF 1024 // 每行数据的缓冲区大小
 
+// 定义相关性项的结构体
 typedef struct {
-    int index;
-    double corr;
+    int index; // 特征索引
+    double corr; // 相关系数
 } CorrItem;
 
+// 计算皮尔逊相关系数
 static double pearson_corr(const double *x, const double *y, int n) {
     double sum_x = 0.0, sum_y = 0.0, sum_x2 = 0.0, sum_y2 = 0.0, sum_xy = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -29,28 +41,31 @@ static double pearson_corr(const double *x, const double *y, int n) {
         sum_xy += x[i] * y[i];
     }
 
-    double numerator = n * sum_xy - sum_x * sum_y;
-    double denominator_x = n * sum_x2 - sum_x * sum_x;
-    double denominator_y = n * sum_y2 - sum_y * sum_y;
+    double numerator = n * sum_xy - sum_x * sum_y; // 分子
+    double denominator_x = n * sum_x2 - sum_x * sum_x; // x 的分母
+    double denominator_y = n * sum_y2 - sum_y * sum_y; // y 的分母
 
     if (denominator_x <= 0.0 || denominator_y <= 0.0) {
-        return 0.0;
+        return 0.0; // 如果分母为 0，返回 0
     }
 
-    return numerator / sqrt(denominator_x * denominator_y);
+    return numerator / sqrt(denominator_x * denominator_y); // 返回相关系数
 }
 
+// 交换两个相关性项
 static void swap_corr(CorrItem *a, CorrItem *b) {
     CorrItem temp = *a;
     *a = *b;
     *b = temp;
 }
 
+// 打印 UTF-8 格式的字符串
 static void print_utf8f(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
 
 #ifdef _WIN32
+    // Windows 平台的 UTF-8 输出处理
     int length = _vscprintf(fmt, args);
     if (length >= 0) {
         char *buffer = (char *)malloc((size_t)length + 1);
@@ -86,10 +101,11 @@ static void print_utf8f(const char *fmt, ...) {
     }
 #endif
 
-    vprintf(fmt, args);
+    vprintf(fmt, args); // 非 Windows 平台直接输出
     va_end(args);
 }
 
+// 按相关系数绝对值降序排序
 static void sort_corr_desc(CorrItem items[], int n) {
     for (int i = 0; i < n - 1; ++i) {
         for (int j = 0; j < n - 1 - i; ++j) {
@@ -100,6 +116,7 @@ static void sort_corr_desc(CorrItem items[], int n) {
     }
 }
 
+// 求解矩阵的逆矩阵 高斯-约旦消元法（Gauss-Jordan Elimination）求逆函数
 static int invert_matrix(double *mat, double *inv, int n) {
     for (int i = 0; i < n * n; ++i) {
         inv[i] = 0.0;
@@ -164,7 +181,7 @@ static int invert_matrix(double *mat, double *inv, int n) {
 }
 
 int main(int argc, char *argv[]) {
-    setlocale(LC_ALL, "");
+    setlocale(LC_ALL, ""); // 设置本地化
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -172,9 +189,9 @@ int main(int argc, char *argv[]) {
 
     const char *filename = NULL;
     if (argc >= 2) {
-        filename = argv[1];
+        filename = argv[1]; // 从命令行参数获取文件名
     } else {
-        filename = "housing-price.txt";
+        filename = "housing-price.txt"; // 默认文件名
     }
 
     FILE *fp = fopen(filename, "r");
@@ -183,24 +200,24 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    double X[MAX_ROWS][FEATURE_COUNT];
-    double y[MAX_ROWS];
-    int n = 0;
+    double X[MAX_ROWS][FEATURE_COUNT]; // 特征矩阵
+    double y[MAX_ROWS]; // 目标值向量
+    int n = 0; // 数据行数
 
     char line[LINE_BUF];
     while (fgets(line, sizeof(line), fp)) {
-        if (strlen(line) < 2) continue;
+        if (strlen(line) < 2) continue; // 跳过空行
 
         double values[FEATURE_COUNT + 1];
         int count = 0;
         char *token = strtok(line, " \t\r\n");
         while (token != NULL && count < FEATURE_COUNT + 1) {
-            values[count++] = atof(token);
+            values[count++] = atof(token); // 解析数值
             token = strtok(NULL, " \t\r\n");
         }
 
         if (count != FEATURE_COUNT + 1) {
-            continue;
+            continue; // 跳过无效行
         }
 
         if (n >= MAX_ROWS) {
