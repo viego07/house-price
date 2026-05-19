@@ -24,13 +24,25 @@
 #define SELECT_COUNT 4 // 选择的特征数量
 #define LINE_BUF 1024 // 每行数据的缓冲区大小
 
+// 程序概要：
+// 1) 从文本文件读取每行包含 13 个特征 + 1 个目标值（共 14 列）的数据
+// 2) 计算每个特征与目标的皮尔逊相关系数并按绝对值排序
+// 3) 选择相关性最高的若干特征，构造正规方程矩阵 A 和向量 b
+// 4) 使用高斯-约旦消元（带列选主元）求逆矩阵并解出回归系数 beta
+// 5) 计算并输出 RMSE 作为模型评估指标
+
 // 定义相关性项的结构体
 typedef struct {
     int index; // 特征索引
     double corr; // 相关系数
 } CorrItem;
 
-// 计算皮尔逊相关系数
+// 计算两个数组之间的皮尔逊相关系数（Pearson correlation）
+// 参数：
+//  - x: 指向第一个变量数组的指针
+//  - y: 指向第二个变量数组的指针
+//  - n: 数组长度（样本数量）
+// 返回：两个变量的相关系数 r，范围 [-1, 1]；当分母接近 0 时返回 0
 static double pearson_corr(const double *x, const double *y, int n) {
     double sum_x = 0.0, sum_y = 0.0, sum_x2 = 0.0, sum_y2 = 0.0, sum_xy = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -59,7 +71,10 @@ static void swap_corr(CorrItem *a, CorrItem *b) {
     *b = temp;
 }
 
-// 打印 UTF-8 格式的字符串
+// 跨平台的 UTF-8 格式输出函数
+// - 在 Windows 平台上将 UTF-8 转为宽字符并通过控制台 API 输出
+// - 在类 Unix 平台上直接使用 vprintf 输出
+// 该函数行为类似于 printf，但对控制台编码做了兼容处理
 static void print_utf8f(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -116,7 +131,11 @@ static void sort_corr_desc(CorrItem items[], int n) {
     }
 }
 
-// 求解矩阵的逆矩阵 高斯-约旦消元法（Gauss-Jordan Elimination）求逆函数
+// 求逆函数说明：
+// - 输入：原矩阵 mat（大小 n*n，按行主序），输出缓冲区 inv（调用者负责分配）
+// - 返回：成功返回 1 并将逆矩阵写入 inv；失败返回 0（例如矩阵奇异）
+// 实现细节：对矩阵的拷贝执行带列选主元的高斯-约旦消元（选择每列中绝对值最大的行为主元），
+// 将原矩阵变换为单位矩阵的同时，对单位矩阵执行相同的操作，从而得到逆矩阵。
 static int invert_matrix(double *mat, double *inv, int n) {
     for (int i = 0; i < n * n; ++i) {
         inv[i] = 0.0;
@@ -194,6 +213,9 @@ int main(int argc, char *argv[]) {
         filename = "housing-price.txt"; // 默认文件名
     }
 
+    // 数据文件格式说明：每行 14 个数值，前 13 个为特征（按顺序对应 feature_names），
+    // 最后一个为目标值 MEDV（房价）。数值以空格或制表符分隔。
+
     FILE *fp = fopen(filename, "r");
     if (!fp) {
         print_utf8f("无法打开文件: %s\n", filename);
@@ -205,6 +227,7 @@ int main(int argc, char *argv[]) {
     int n = 0; // 数据行数
 
     char line[LINE_BUF];
+    // 逐行读取并解析数据行，使用 strtok 按空白字符拆分列
     while (fgets(line, sizeof(line), fp)) {
         if (strlen(line) < 2) continue; // 跳过空行
 
@@ -240,6 +263,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // 计算每个特征与目标 y 的皮尔逊相关系数，用于筛选最相关的特征
     CorrItem corr_items[FEATURE_COUNT];
     for (int j = 0; j < FEATURE_COUNT; ++j) {
         double column[MAX_ROWS];
@@ -271,6 +295,8 @@ int main(int argc, char *argv[]) {
     }
 
     int p = SELECT_COUNT + 1;
+    // 构造正规方程矩阵 A（p x p）和向量 b（长度 p）
+    // 其中每一行的第一个元素为常数项（1），其余为所选特征的取值
     double *A = (double *)calloc((size_t)p * p, sizeof(double));
     double *b = (double *)calloc((size_t)p, sizeof(double));
     double *Ainv = (double *)calloc((size_t)p * p, sizeof(double));
@@ -300,6 +326,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // 计算 A 的逆矩阵 Ainv，以便求解 beta = Ainv * b
     if (!invert_matrix(A, Ainv, p)) {
         print_utf8f("\n矩阵不可逆，无法求解回归系数。可能是特征共线性太强。\n");
         free(A);
@@ -316,6 +343,7 @@ int main(int argc, char *argv[]) {
     }
 
     double mse = 0.0;
+    // 使用训练数据计算均方误差（MSE）和均方根误差（RMSE）作为模型性能指标
     for (int i = 0; i < n; ++i) {
         double pred = beta[0];
         for (int j = 0; j < SELECT_COUNT; ++j) {
@@ -327,6 +355,7 @@ int main(int argc, char *argv[]) {
     mse /= n;
     double rmse = sqrt(mse);
 
+    // 输出回归模型表达式及评估结果
     print_utf8f("\n多元线性回归模型:\n");
     print_utf8f("y = %.6f", beta[0]);
     for (int j = 0; j < SELECT_COUNT; ++j) {
